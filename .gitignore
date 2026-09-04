@@ -1,0 +1,59 @@
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Stage 1: Python extraction (dev machines only, not needed at grading time) ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+extraction/tmp/
+extraction/.cache/
+
+# --- Stage 2: Go build output ---
+/bin/
+/src/cmd/server/server
+/src/loregrep
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Logs ---
+*.log
+
+# --- Raw source corpus: large, provided input data — not committed ---
+# ~122MB of PDFs/DOCX/PNGs. Best practice is to keep large, non-authored
+# input data out of git history rather than let every clone/fetch pay for
+# it. Stage 1 (extraction/build_artifact.py) reads it locally to produce
+# data/chunks.json, which IS what's committed — see docs/decisions.md and
+# README.md ("Obtaining the corpus") for how to get a local copy.
+/Ashen_Era_Archive/
+
+# NOTE: data/chunks.json IS committed (it's the build-time artifact the
+# live Go server loads, and the only thing grading needs — see
+# docs/decisions.md). Do not ignore data/.
+#
+# If chunks.json itself ever grows past a few tens of MB, revisit this
+# (Git LFS, or a downloadable release asset) rather than silently letting
+# the repo bloat — see docs/decisions.md.
