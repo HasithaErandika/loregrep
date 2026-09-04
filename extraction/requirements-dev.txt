@@ -1,0 +1,7 @@
+# Dev/exploration tooling on top of the core pipeline deps.
+# Not needed to run build_artifact.py — only for working in extraction/notebooks/.
+-r requirements.txt
+
+jupyterlab>=4.2
+ipykernel>=6.29
+nbstripout>=0.7   # strips notebook outputs on commit so .ipynb diffs stay clean

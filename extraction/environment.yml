@@ -1,0 +1,12 @@
+name: loregrep-extraction
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - tesseract           # conda-forge ships the tesseract binary itself —
+                          # miniforge/mamba users don't need a separate
+                          # system package (apt/brew) for OCR, unlike venv/pip
+  - pip:
+      - -r requirements.txt
+      - -r requirements-dev.txt

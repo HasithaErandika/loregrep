@@ -7,6 +7,41 @@ after the fact. Newest first.
 
 ---
 
+## 2026-09-04 — Notebooks are exploration-only; the pipeline is plain `.py`, output-stripped via nbstripout
+
+**Decision:** `extraction/notebooks/` holds `.ipynb` files for prototyping
+parsers against sample documents only. `build_artifact.py` and the other
+Stage 1 scripts never import from that folder — working notebook logic gets
+rewritten as a function in the real `.py` module. Notebook outputs are
+stripped on commit via `nbstripout` (`.gitattributes` + one-time
+`nbstripout --install` per clone), so `.ipynb` diffs stay text-only.
+
+Both `venv`/`pip` and `miniforge`/`mamba` are supported for the Python side
+— `extraction/requirements.txt` is the single source of truth for pipeline
+deps, `requirements-dev.txt` adds notebook tooling, and
+`extraction/environment.yml` (conda) just installs both via pip inside the
+conda env so the two paths can't drift apart. The one substantive
+difference: `environment.yml` pulls `tesseract` from conda-forge, so
+miniforge users skip the system package install that venv/pip users still
+need.
+
+**Why:**
+- Notebooks are good for the actual exploration work (does this parser get
+  this table right, what does this OCR output look like) but bad as the
+  pipeline itself: cells can execute out of order and silently diverge from
+  the file's visual top-to-bottom order, and `build_artifact.py` needs to
+  run non-interactively — `python build_artifact.py`, not "run all cells."
+- Un-stripped `.ipynb` diffs (execution counts, embedded output/image
+  blobs) are exactly the kind of noisy, unreviewable commit the git-
+  discipline grading criteria (30% of the rubric) penalizes. Stripping
+  outputs before commit keeps notebook diffs as readable as any other file.
+- The team isn't standardized on one Python environment manager — requiring
+  everyone to install extra system packages differently (or not supporting
+  conda at all) would slow down day-1 setup. A single `requirements.txt`
+  referenced from both paths avoids two dependency lists silently drifting.
+
+---
+
 ## 2026-09-04 — Tool-first agent, not vector-RAG-first
 
 **Decision:** The system is built around an agent that iteratively chooses

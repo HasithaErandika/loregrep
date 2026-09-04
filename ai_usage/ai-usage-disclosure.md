@@ -45,7 +45,7 @@ detail behind each row (what was proposed, what was corrected, why).
 
 | Area | AI involvement | Human review/correction |
 |---|---|---|
-| Repo scaffolding (`docs/`, `.gitignore`, folder structure) | Claude Code drafted the folder structure, `docs/architecture.md`, `docs/decisions.md`, diagrams, and `.gitignore` from the team's plan | Team corrected the initial `.gitignore`/decision to commit the raw `Ashen_Era_Archive/` corpus — redirected to gitignore it as large, non-authored input data (see `docs/decisions.md`, entry superseding the original) |
+| Repo scaffolding (`docs/`, `.gitignore`, folder structure) | Claude Code drafted the folder structure, `docs/architecture.md`, `docs/decisions.md`, diagrams, and `.gitignore` content from the team's plan — as working-tree files only | Team corrected the initial `.gitignore`/decision to commit the raw `Ashen_Era_Archive/` corpus — redirected to gitignore it as large, non-authored input data (see `docs/decisions.md`, entry superseding the original). The actual `git init`, review, commit, and push to GitHub were done by the team directly, not by Claude Code — commit `af31ba5` carries no `Co-Authored-By` trailer, correctly. |
 | Stage 1 extraction (`extraction/`) | | |
 | Stage 2 indexing (`src/internal/index`, `graph`) | | |
 | Agent orchestrator (`src/internal/agent`) | | |

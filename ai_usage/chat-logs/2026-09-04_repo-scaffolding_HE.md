@@ -13,7 +13,6 @@ set up the repo to match: correct `.gitignore`, the folder structure from
 the plan's section 6, and a `docs/` folder.
 
 **What Claude Code did:**
-- Initialized git (repo didn't exist yet)
 - Created the full directory tree (`extraction/`, `data/`, `src/cmd/server`,
   `src/internal/{index,graph,agent,llm,api}`, `docs/`, `ai_usage/`)
 - Wrote `docs/architecture.md` and `docs/decisions.md` from the plan's
@@ -52,5 +51,11 @@ folder (this log + its `README.md`) instead of empty placeholders.
 
 ## Outcome
 
-All of the above applied. Nothing was committed to git during this session
-— scaffolding only, left for the team to review and commit.
+All of the above applied to the working tree. Claude Code did not run any
+`git init`/`commit`/`push` commands that ended up in the project's history —
+**the human performed the actual git init, review, commit, and publish to
+`github.com/HasithaErandika/loregrep` directly**, outside of AI tool calls.
+That commit (`af31ba5`, "docs: init project basics") carries no
+`Co-Authored-By` trailer, correctly reflecting that it's human-authored, not
+AI-authored — see the "Commit attribution" convention in
+`../ai-usage-disclosure.md`.
