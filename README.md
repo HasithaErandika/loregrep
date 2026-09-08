@@ -13,8 +13,14 @@ logged as they're made in [`docs/decisions.md`](docs/decisions.md).
 
 ## Getting started
 
-The repo currently has structure and docs but no implementation yet — this
-is the day-1 setup for anyone starting on it.
+Stage 1 (extraction) is fully implemented and has been run against the
+corpus. Stage 2 (serving) is in progress: all four agent tools
+(`keyword_search`, `table_lookup`, `follow_reference`, `semantic_search`)
+and the agent orchestrator (planner → tool router → sufficiency check →
+synthesizer, per `docs/diagrams/agent-loop.md`) are implemented; only
+`cmd/server`/`internal/api` are left — see "Current status" below for
+specifics, including which pieces need a live API key to exercise for real
+and haven't been yet.
 
 **1. Clone and get the corpus locally**
 
@@ -91,25 +97,29 @@ nbstripout --install
 
 ```
 cd src
-go mod tidy   # once dependencies (bleve etc.) are added to code
 go build ./...
+go test ./...
 ```
 
 `src/go.mod` is already initialized (module
-`github.com/HasithaErandika/loregrep/src`, Go 1.25).
+`github.com/HasithaErandika/loregrep/src`, Go 1.25), and its one real
+dependency so far (`blevesearch/bleve/v2`, for full-text search) is already
+in `go.mod`/`go.sum` — no `go mod tidy` needed to get started.
 
-**5. What to build first**
+**5. Current status**
 
 Stage 1 extraction (`extraction/parse_pdfs.py`, `parse_docx.py`,
 `ocr_scans.py`, `build_artifact.py`) is implemented and has been run
-end-to-end over the full corpus — `data/chunks.json` is committed and
-current. See `extraction/common.py`'s module docstring for the chunk
+end-to-end. See `extraction/common.py`'s module docstring for the chunk
 schema, and `docs/decisions.md` / `docs/limitations.md` for what was found
 running it against the real archive (OCR confidence, entity-tagging
 coverage, the `page: null` decision for non-paginated formats, etc.).
 
-To re-run it (only needed if you change extraction logic, or don't yet have
-a committed `chunks.json` to work from):
+**The committed `data/chunks.json` is currently a sample run, not the full
+corpus** — its own `meta.sample_mode` is `3` and `meta.document_count` is
+33 (of the corpus's real ~341 files, see `docs/limitations.md`). To
+regenerate it (needs a local `Ashen_Era_Archive/` — see "Obtaining the
+corpus" below):
 
 ```
 cd extraction
@@ -121,11 +131,39 @@ python build_artifact.py --skip-ocr      # skip OCR entirely (faster
                                           # the output)
 ```
 
-Next up is Stage 2 — the skeleton (`src/cmd/server/main.go` +
-`src/internal/agent`) can be built directly against the real
-`data/chunks.json` now — see `docs/diagrams/agent-loop.md` for the loop to
-build toward, and `Ashen_Era_Archive/sample_questions.json` for realistic
-test questions.
+Stage 2 (`src/`), in dependency order — loader → indexes → tools → agent →
+API:
+
+| Piece | Status | Where |
+|---|---|---|
+| Corpus loader | done | `src/internal/corpus` |
+| `keyword_search` (full-text, bleve/BM25) | done | `src/internal/index/fulltext.go` |
+| `table_lookup` | done | `src/internal/index/table.go` |
+| Cross-reference graph + `follow_reference` | done | `src/internal/graph` |
+| `semantic_search` (vector fallback) | done*, needs `VOYAGE_API_KEY` | `src/internal/index/vector.go`, `src/internal/llm/voyage.go` |
+| `LLMClient` (OpenRouter) | done*, needs `OPENROUTER_API_KEY` | `src/internal/llm/openrouter.go` |
+| Agent orchestrator (planner/router/sufficiency/synthesizer) | done* | `src/internal/agent` |
+| Server + API | not started | `src/cmd/server`, `src/internal/api` |
+
+\* These three depend on live API keys this environment doesn't have
+configured. `VoyageClient`/`OpenRouterClient` are unit-tested against a
+mocked HTTP server (retry/backoff, error handling, request/response
+shapes), and `VectorStore`/the agent loop are smoke-tested against the
+real corpus using fake, in-process stand-ins for the two clients — real
+scale, real tool dispatch, but not a real model's judgment. Once
+`.env`'s `OPENROUTER_API_KEY`/`VOYAGE_API_KEY` are filled in (see "2. API
+keys" above) they should work as designed, but that's genuinely
+unverified — worth an early smoke test with real keys before relying on it.
+
+There's no runnable server yet — `go test ./...` from `src/` is currently
+the way to exercise what's built (the agent package itself has no test
+files — see `docs/decisions.md` for why). Note that `follow_reference` is
+built from each chunk's already-tagged `entities` field (co-occurrence),
+not from the wiki's `[[link]]` markup — that markup isn't preserved in
+`chunks.json`, and rebuilding it from raw `Ashen_Era_Archive/` at runtime
+would break the extraction/serving seam grading depends on (`go build &&
+./server`, no Python) — see `docs/decisions.md`. See
+`Ashen_Era_Archive/sample_questions.json` for realistic test questions.
 
 **Notebooks vs. scripts:** prototype parser behavior (e.g. "does
 `pdfplumber` get this table right") in `extraction/notebooks/`, then move
@@ -145,13 +183,14 @@ for the `nbstripout` diff-cleanliness setup.
 ├── data/
 │   └── chunks.json         # committed artifact Stage 2 loads (regenerable)
 ├── src/                     # Stage 2 — Go, runtime agent + server
-│   ├── cmd/server/
+│   ├── cmd/server/            # not implemented yet
 │   └── internal/
-│       ├── index/            # bleve full-text + vector store
-│       ├── graph/             # cross-reference graph
-│       ├── agent/               # planner, tool router, sufficiency check, synthesizer
-│       ├── llm/                   # OpenRouter client interface
-│       └── api/                     # HTTP handlers, trace streaming
+│       ├── corpus/              # chunks.json loader (done)
+│       ├── index/                 # keyword_search, table_lookup, vector store (done)
+│       ├── graph/                   # follow_reference / cross-reference graph (done)
+│       ├── agent/                     # planner, tool router, sufficiency check, synthesizer (done)
+│       ├── llm/                         # OpenRouter + Voyage clients (done, needs real API keys to run live)
+│       └── api/                           # HTTP handlers, trace streaming (not started)
 ├── docs/
 │   ├── architecture.md
 │   ├── decisions.md
@@ -179,26 +218,29 @@ a local, un-tracked copy each team member keeps.
 
 ## Running
 
-**Regenerate the extraction artifact** (only needed if extraction logic
-changes, or `Ashen_Era_Archive/` is present locally — `data/chunks.json` is
-committed and up to date otherwise):
+**Regenerate the extraction artifact** (needs a local `Ashen_Era_Archive/`
+— see "Obtaining the corpus" above; the committed `data/chunks.json` is
+currently a `--sample 3` run, not the full corpus — see "Current status"):
 
 ```
 cd extraction
 python build_artifact.py   # → ../data/chunks.json
 ```
 
-**Run the live system** (no Python required):
+**Exercise Stage 2** (no Python required — loads the committed
+`data/chunks.json` directly):
 
 ```
 cd src
-go build ./cmd/server
-./server
+go build ./...
+go test ./...
 ```
 
-*(The `src/` side — `go build ./cmd/server` above — isn't implemented yet;
-that's the next stage. Stage 1's `build_artifact.py` command above is real
-and produces the committed `data/chunks.json`.)*
+*There is no `cmd/server` yet, so nothing is runnable as a live server or
+API — `go test ./...` above is the current way to verify what's built
+(corpus loading, `keyword_search`, `table_lookup`). `go build ./cmd/server
+&& ./server` will become the real run command once the server and agent
+orchestrator exist.*
 
 ## Docs
 

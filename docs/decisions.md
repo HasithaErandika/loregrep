@@ -7,6 +7,121 @@ after the fact. Newest first.
 
 ---
 
+## 2026-09-08 — Agent orchestrator + OpenRouter `LLMClient`: complete the planner → tool router → sufficiency check → synthesizer loop
+
+**Decision:** `src/internal/llm/openrouter.go` adds `LLMClient`/`OpenRouterClient`
+(chat completions, OpenRouter's `response_format: json_schema` strict mode
+for structured output, retry/backoff — same shape as `VoyageClient`, kept
+as a separate implementation rather than a shared abstraction since the
+two APIs' request/response/error bodies differ enough that sharing would
+need its own escape hatches). `src/internal/agent` adds `Orchestrator.Ask`,
+implementing `docs/diagrams/agent-loop.md` exactly: plan a tool call →
+dispatch it against the real `Toolset` (`keyword_search`, `table_lookup`,
+`follow_reference`, `semantic_search` if configured) → sufficiency check →
+loop or synthesize, capped at `MaxIterations` (6).
+
+- **Every LLM decision point uses a JSON schema, not free-text parsing.**
+  The planner's tool choice, the sufficiency check, and the synthesizer's
+  answer/citations/conflicts are each constrained by an `llm.JSONSchema`
+  (OpenRouter strict mode). Strict mode requires every schema property to
+  be listed in `required` (nullability expressed via `type` unions, e.g.
+  citation `page`), so `ToolCall`'s per-tool-optional fields (`query` vs.
+  `entity`/`attribute`) are all required in the schema even though only
+  some apply to a given tool — the model just returns `""` for the unused
+  ones.
+- **The synthesizer's system prompt explicitly names the corpus's
+  `reliability_tier` categories** (`docs/limitations.md`:
+  `in_world_unreliable`/`official`/`reference`/`narrative`) and instructs
+  it to report disagreements rather than silently pick a source — this is
+  the actual mechanism behind architecture.md's "flags conflicting
+  sources," not a separate conflict-detection algorithm.
+- **No test files for `llm/openrouter.go` or `src/internal/agent`** — per
+  explicit instruction, since both need a real `OPENROUTER_API_KEY` (not
+  configured in this environment) to exercise for real, unlike Voyage/the
+  three deterministic tools, which were fully unit-testable against
+  synthetic fixtures. Verified instead with in-process smoke runs using a
+  fake `llm.LLMClient` returning canned schema-shaped JSON, against the
+  real `Toolset` built from the real corpus: (1) a normal run
+  (`keyword_search` → sufficient → synthesize) produces a correctly parsed
+  `Answer` with citations; (2) an always-insufficient fake confirms the
+  loop actually stops at `MaxIterations` (6 tool calls, 13 total LLM calls
+  = 6 plan + 6 sufficiency + 1 synthesis) and still returns a best-effort
+  answer with `HitIterationCap: true`, rather than hanging — the specific
+  demo-safety property `docs/limitations.md` calls out.
+- **`Toolset.Semantic` may be `nil`** (no embeddings built yet — needs a
+  live `VOYAGE_API_KEY`), and the planner is only ever told about tools
+  that are actually available (`availableTools`), so a missing
+  `semantic_search` degrades gracefully instead of the LLM picking a tool
+  that would error.
+
+---
+
+## 2026-09-08 — `semantic_search` tool: Voyage embeddings, brute-force cosine, verified without a live key
+
+**Decision:** `src/internal/llm/voyage.go` adds `EmbeddingClient`/`VoyageClient`
+(Voyage AI's embeddings API, retry/backoff, batching above the API's
+1,000-input-per-request cap). `src/internal/index/vector.go` adds
+`VectorStore` (brute-force cosine similarity — the corpus is small enough
+that an ANN index would add complexity without a measurable speed win) and
+`SemanticIndex`, the `semantic_search` agent tool.
+
+- **`input_type` is set explicitly** (`"document"` when embedding chunks
+  via `BuildVectorStore`, `"query"` when embedding a search query via
+  `SemanticIndex.Search`) — Voyage's asymmetric embedding support, which
+  produces different (better-matched) vectors for the same model depending
+  on which side of a retrieval pair a text is on.
+- **No `VOYAGE_API_KEY` is configured in this environment**, so
+  `VoyageClient` is verified only via unit tests against an
+  `httptest.Server` mock (success, out-of-order response indices, 429
+  retry-then-succeed, non-retryable 400, retries-exhausted 500, batch
+  splitting) — real, but not proof the live API integration works
+  end-to-end. Separately, `VectorStore`/`BuildVectorStore` were smoke-
+  tested against the real 3,008-chunk corpus using a deterministic
+  hash-based fake embedder (semantically meaningless, but real scale):
+  build took ~5ms, a brute-force search over all 3,008 vectors took
+  ~0.5ms — confirms brute force is fast enough here, without needing a
+  live key to prove it.
+
+---
+
+## 2026-09-08 — Cross-reference graph + `follow_reference(entity)`: co-occurrence, not wiki links
+
+**Decision:** `src/internal/graph` builds the cross-reference graph purely
+from `data/chunks.json`'s per-chunk `entities` field — two entities get an
+edge whenever Stage 1 tagged both into the same chunk, weighted by how many
+chunks co-tag them, with up to 10 example chunks kept per edge for
+citation. `FollowReference(entity, limit)` returns an entity's neighbors,
+ranked by weight, with the same exact-then-substring entity matching as
+`TableIndex.Lookup` — merging edges across every substring match rather
+than picking one, for the same reason.
+
+- **Not built from the wiki's `[[link]]` markup**, even though that's the
+  more obvious "cross-reference" signal and `docs/architecture.md` calls
+  the graph "seeded from the wiki's ~90 articles." `extraction/common.py`'s
+  `clean_wiki_markup` strips `[[Entity Name]]` down to plain prose before a
+  chunk is ever written to `chunks.json` — link structure isn't preserved
+  in the artifact at all. Rebuilding it would mean Stage 2 reading raw
+  `Ashen_Era_Archive/` markdown at runtime, which breaks the entire
+  extraction/serving seam (`docs/decisions.md`'s Python/Go split decision):
+  the raw corpus isn't committed and grading only runs `go build &&
+  ./server`. Co-occurrence within a chunk's already-computed `entities`
+  list needs nothing beyond the committed artifact and is a reasonable
+  proxy — two entities named in the same paragraph/table row are almost
+  always actually related in this corpus.
+- **Verified against the real corpus, not just synthetic fixtures:** 59
+  entities, 246 co-occurring pairs. `FollowReference("The Bleeding Crown")`
+  top hit is "House Morvain" at weight 133 — matches an independent
+  co-occurrence count run directly against `chunks.json` outside the Go
+  code, before trusting the implementation.
+- **Graph quality inherits Stage 1's entity-tagging limitations exactly**
+  (`docs/limitations.md`): exact-name string matching, no coreference
+  resolution, so an entity referred to only as "the Warden" or "she" in a
+  chunk that also names another entity won't produce an edge there. Not a
+  Stage 2 defect — there's no additional information Stage 2 could recover
+  that Stage 1 didn't already extract.
+
+---
+
 ## 2026-09-08 — `table_lookup(entity, attribute)` tool: subject resolution over codex tables
 
 **Decision:** `src/internal/index/table.go` adds `TableIndex`, indexing

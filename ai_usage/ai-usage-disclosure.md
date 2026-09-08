@@ -47,15 +47,20 @@ detail behind each row (what was proposed, what was corrected, why).
 |---|---|---|
 | Repo scaffolding (`docs/`, `.gitignore`, folder structure) | Claude Code drafted the folder structure, `docs/architecture.md`, `docs/decisions.md`, diagrams, and `.gitignore` content from the team's plan — as working-tree files only | Team corrected the initial `.gitignore`/decision to commit the raw `Ashen_Era_Archive/` corpus — redirected to gitignore it as large, non-authored input data (see `docs/decisions.md`, entry superseding the original). The actual `git init`, review, commit, and push to GitHub were done by the team directly, not by Claude Code — commit `af31ba5` carries no `Co-Authored-By` trailer, correctly. |
 | Stage 1 extraction (`extraction/`) | Claude Code implemented `common.py`/`parse_pdfs.py`/`parse_docx.py`/`ocr_scans.py`/`build_artifact.py` end-to-end, inspected the actual corpus (not just the docs) to make several concrete calls: the `chunks.json` `{"meta", "chunks"}` shape, `page: null` for non-paginated formats, deduping `images/` against `codex/images/`, a dual-Tesseract-PSM-mode OCR heuristic, and a noise-confidence floor to drop hallucinated OCR on illustrative art — logged in `docs/decisions.md` and `docs/limitations.md`. Installed Tesseract (`winget install UB-Mannheim.TesseractOCR`) after asking, and ran `build_artifact.py` against the full corpus. | See `ai_usage/chat-logs/2026-09-08_stage1-extraction_KD.md` for the session detail. |
-| Stage 2 indexing (`src/internal/index`, `graph`) | | |
-| Agent orchestrator (`src/internal/agent`) | | |
+| Stage 2 indexing (`src/internal/corpus`, `index`, `graph`) | Claude Code implemented the corpus loader, `keyword_search` (bleve/BM25), `table_lookup`, the cross-reference graph + `follow_reference` (entity co-occurrence, not wiki link markup — see `docs/decisions.md`), and the `semantic_search` vector store (Voyage embeddings + brute-force cosine), each verified against the real corpus as it landed. Also corrected `README.md`'s stale "no implementation yet" setup instructions. | Caught its own subject-resolution bug in `table_lookup` (wiki tables' `section: "Infobox"` was wrongly treated as identifying) by testing against real corpus shapes before shipping it, not just hand-written fixtures — logged in the chat log below rather than silently fixed. Commits were reviewed and made by the human between turns, not delegated to Claude Code. See `ai_usage/chat-logs/2026-09-08_stage2-build_HE.md`. |
+| Agent orchestrator + LLM clients (`src/internal/agent`, `src/internal/llm`) | Claude Code implemented the OpenRouter `LLMClient` and the full planner → tool router → sufficiency check → synthesizer loop (`docs/diagrams/agent-loop.md`), with every LLM decision point constrained to a JSON schema rather than parsed from free text. API request/response shapes were verified against each provider's live docs before writing the clients. | Explicitly directed to skip unit tests for this piece (no live `OPENROUTER_API_KEY`/`VOYAGE_API_KEY` configured to exercise it against) — a deliberate scope redirection from the test-per-package pattern used everywhere else in Stage 2. Verified instead with in-process smoke runs (fake LLM client, real corpus, real tools) confirming control flow, not real model judgment. See chat log. |
 | API/UI (`src/internal/api`) | | |
 
 ## Chat logs
 
 Session logs live in `ai_usage/chat-logs/` — see that folder's
 [`README.md`](chat-logs/README.md) for the naming convention and what to
-capture. First entry: `2026-09-04_repo-scaffolding_HE.md`.
+capture:
+
+- `2026-09-04_repo-scaffolding_HE.md` — initial repo/docs scaffolding
+- `2026-09-08_stage1-extraction_KD.md` — Stage 1 extraction pipeline
+- `2026-09-08_stage2-build_HE.md` — Stage 2 loader through agent
+  orchestrator, plus a `README.md` correction
 
 ## Team contribution notes
 
