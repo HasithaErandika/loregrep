@@ -100,21 +100,32 @@ go build ./...
 
 **5. What to build first**
 
-Per the timeline, day 1–2 goal is Stage 1 extraction working end-to-end on
-a *small sample* (a couple of files per format) before running the full
-corpus:
+Stage 1 extraction (`extraction/parse_pdfs.py`, `parse_docx.py`,
+`ocr_scans.py`, `build_artifact.py`) is implemented and has been run
+end-to-end over the full corpus — `data/chunks.json` is committed and
+current. See `extraction/common.py`'s module docstring for the chunk
+schema, and `docs/decisions.md` / `docs/limitations.md` for what was found
+running it against the real archive (OCR confidence, entity-tagging
+coverage, the `page: null` decision for non-paginated formats, etc.).
 
-- `extraction/parse_pdfs.py`, `parse_docx.py`, `ocr_scans.py` — one parser
-  each, per `docs/architecture.md` → "Stage 1 — extraction"
-- `extraction/build_artifact.py` — merges parser output into
-  `data/chunks.json`, matching the chunk shape described in
-  `docs/architecture.md`
+To re-run it (only needed if you change extraction logic, or don't yet have
+a committed `chunks.json` to work from):
 
-In parallel, the Stage 2 skeleton (`src/cmd/server/main.go` +
-`src/internal/agent`) can start against a hand-written sample
-`chunks.json` before real extraction is ready — see
-`docs/diagrams/agent-loop.md` for the loop to build toward, and
-`Ashen_Era_Archive/sample_questions.json` for realistic test questions.
+```
+cd extraction
+python build_artifact.py                # full corpus
+python build_artifact.py --sample 3      # ~3 files per format per
+                                          # category, for a fast smoke test
+python build_artifact.py --skip-ocr      # skip OCR entirely (faster
+                                          # iteration; no OCR chunks in
+                                          # the output)
+```
+
+Next up is Stage 2 — the skeleton (`src/cmd/server/main.go` +
+`src/internal/agent`) can be built directly against the real
+`data/chunks.json` now — see `docs/diagrams/agent-loop.md` for the loop to
+build toward, and `Ashen_Era_Archive/sample_questions.json` for realistic
+test questions.
 
 **Notebooks vs. scripts:** prototype parser behavior (e.g. "does
 `pdfplumber` get this table right") in `extraction/notebooks/`, then move
@@ -168,9 +179,6 @@ a local, un-tracked copy each team member keeps.
 
 ## Running
 
-*(Once the scripts below exist — see "What to build first" above; these
-are the eventual commands, not yet functional.)*
-
 **Regenerate the extraction artifact** (only needed if extraction logic
 changes, or `Ashen_Era_Archive/` is present locally — `data/chunks.json` is
 committed and up to date otherwise):
@@ -187,6 +195,10 @@ cd src
 go build ./cmd/server
 ./server
 ```
+
+*(The `src/` side — `go build ./cmd/server` above — isn't implemented yet;
+that's the next stage. Stage 1's `build_artifact.py` command above is real
+and produces the committed `data/chunks.json`.)*
 
 ## Docs
 

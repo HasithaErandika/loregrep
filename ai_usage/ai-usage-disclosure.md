@@ -46,7 +46,7 @@ detail behind each row (what was proposed, what was corrected, why).
 | Area | AI involvement | Human review/correction |
 |---|---|---|
 | Repo scaffolding (`docs/`, `.gitignore`, folder structure) | Claude Code drafted the folder structure, `docs/architecture.md`, `docs/decisions.md`, diagrams, and `.gitignore` content from the team's plan — as working-tree files only | Team corrected the initial `.gitignore`/decision to commit the raw `Ashen_Era_Archive/` corpus — redirected to gitignore it as large, non-authored input data (see `docs/decisions.md`, entry superseding the original). The actual `git init`, review, commit, and push to GitHub were done by the team directly, not by Claude Code — commit `af31ba5` carries no `Co-Authored-By` trailer, correctly. |
-| Stage 1 extraction (`extraction/`) | | |
+| Stage 1 extraction (`extraction/`) | Claude Code implemented `common.py`/`parse_pdfs.py`/`parse_docx.py`/`ocr_scans.py`/`build_artifact.py` end-to-end, inspected the actual corpus (not just the docs) to make several concrete calls: the `chunks.json` `{"meta", "chunks"}` shape, `page: null` for non-paginated formats, deduping `images/` against `codex/images/`, a dual-Tesseract-PSM-mode OCR heuristic, and a noise-confidence floor to drop hallucinated OCR on illustrative art — logged in `docs/decisions.md` and `docs/limitations.md`. Installed Tesseract (`winget install UB-Mannheim.TesseractOCR`) after asking, and ran `build_artifact.py` against the full corpus. | See `ai_usage/chat-logs/2026-09-08_stage1-extraction_KD.md` for the session detail. |
 | Stage 2 indexing (`src/internal/index`, `graph`) | | |
 | Agent orchestrator (`src/internal/agent`) | | |
 | API/UI (`src/internal/api`) | | |

@@ -7,6 +7,63 @@ after the fact. Newest first.
 
 ---
 
+## 2026-09-08 — Stage 1 extraction implemented: chunk schema, `chunks.json` shape, and a handful of corpus-driven calls
+
+**Decision:** `extraction/common.py`, `parse_pdfs.py`, `parse_docx.py`,
+`ocr_scans.py`, and `build_artifact.py` are implemented end-to-end and have
+been run over the full corpus (see `docs/limitations.md` for the resulting
+counts). A few concrete choices, made against what the actual corpus turned
+out to contain rather than decided up front:
+
+- **`chunks.json` top-level shape is `{"meta": {...}, "chunks": [...]}`**,
+  not a bare array — `meta` carries `generated_at`, per-category/format/
+  extraction-method counts, entity count, and whether OCR ran, so Stage 2
+  (or anyone inspecting the file) gets corpus stats without scanning every
+  chunk. Nothing in `docs/architecture.md` dictated this either way since
+  Stage 2 doesn't exist yet — see `common.py`'s and `build_artifact.py`'s
+  module docstrings for the full chunk schema.
+- **`page` is `null` for docx/md/txt/image chunks, never a guessed value.**
+  Those formats have no native page boundaries before rendering — python-docx
+  paragraphs, Markdown, and plain text don't carry page breaks. Estimating a
+  page number from a characters-per-page heuristic would look precise while
+  being fabricated. `section` (nearest heading) is the citation anchor for
+  those chunks instead; `page` stays populated and real for `pdf`/`scan_pdf`.
+- **`images/` (top-level) is skipped; only `codex/images/` is processed.**
+  `diff` plus a byte comparison confirmed `images/` is an exact duplicate of
+  `codex/images/` (same 15 filenames, identical bytes) — processing both
+  would double-count every plate's OCR chunk under two different `doc_id`s
+  for no benefit.
+- **`wiki/images/` (character portraits, battle paintings — filenames
+  prefixed `atmo_`) get OCR attempted but mostly produce nothing, correctly.**
+  These are illustrative art with no embedded text, unlike `codex/images/`'s
+  `plate_*` files, which are bar-chart-style infographics with real numeric
+  labels (garrison strength, attunement cost, casualties). Tesseract on pure
+  artwork doesn't cleanly return empty — it hallucinates short strings of
+  near-random glyphs at ~30 mean word confidence, versus 90+ on the corpus's
+  real document/plate text in spot checks. `ocr_scans.py` discards anything
+  below a 35-confidence noise floor rather than emitting it as a chunk. This
+  also means the sub-track 1A question style "what object is X holding in
+  their portrait" is **not answerable from Stage 1's output** — that needs
+  vision-LLM captioning, not OCR. See `docs/limitations.md`.
+- **Every figure plate is OCR'd with two Tesseract page-segmentation modes
+  (`--psm 6` and `--psm 12`), keeping whichever gets higher mean word
+  confidence**, rather than one fixed mode. `--psm 6` (single prose block)
+  is right for scanned ephemera pages; the bar-chart plates' bold numeric
+  labels are laid out too sparsely for it and `--psm 6` silently dropped
+  most of the numbers in a spot check (e.g. only "20" of four labels on one
+  plate) while `--psm 12` (sparse text + orientation detection) caught all
+  four at 91 mean confidence. Trying both and picking by confidence avoids
+  hard-coding a mode per source folder while still getting the numbers that
+  matter for sub-track 1A's "what's the attunement cost" style questions.
+
+**Why not decided differently:** a fixed characters-per-page estimate for
+docx page numbers was considered and rejected — a wrong-but-confident page
+citation is worse for the agent's answer quality than an honest `null` with
+a section name, since a judge can spot-check a page reference that's often
+off by one document but consistently structured never gets caught as wrong.
+
+---
+
 ## 2026-09-04 — Notebooks are exploration-only; the pipeline is plain `.py`, output-stripped via nbstripout
 
 **Decision:** `extraction/notebooks/` holds `.ipynb` files for prototyping
