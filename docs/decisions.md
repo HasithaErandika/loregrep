@@ -7,6 +7,43 @@ after the fact. Newest first.
 
 ---
 
+## 2026-09-08 — Stage 2 started: corpus loader + full-text index (`keyword_search`)
+
+**Decision:** `src/internal/corpus` loads `data/chunks.json` into typed
+`Chunk`/`Meta` structs (nullable fields stay pointers rather than being
+defaulted, matching Stage 1's `page: null` decision below). `src/internal/index`
+wraps an in-memory `bleve` index (`bleve.NewMemOnly` — no on-disk index
+file, since the source artifact is already a committed build output) over
+every chunk's searchable text, and exposes `KeywordSearch`, the `keyword_search`
+agent tool from `docs/architecture.md`.
+
+- **Table chunks are indexed too, via a flattened text rendering**
+  (`Chunk.SearchText()` joins each row with spaces). `chunks.json` stores
+  `text: null` for `chunk_type: "table"` chunks — table content lives only
+  in the `table` field — so without this, `keyword_search("garrison
+  strength")` would silently miss every codex table row and only the agent's
+  `table_lookup` tool would ever see them. Confirmed against the real
+  corpus: `keyword_search("garrison strength")` now returns a `plate_*`
+  table chunk alongside prose hits.
+- **Scoring model is explicitly set to BM25** (`IndexMapping.ScoringModel =
+  "bm25"`) rather than left at bleve's tf-idf default, since
+  `docs/architecture.md` names BM25 specifically for this tool.
+- **Chunks with no searchable text are skipped at index time, not indexed
+  as empty documents** — e.g. `wiki/images/atmo_*` chunks that never made it
+  past Stage 1's OCR confidence floor (`docs/limitations.md`). Verified this
+  doesn't silently drop real content: `NewFullText` skips exactly the chunks
+  where `SearchText()` is empty, and a test asserts the skipped count.
+- Verified against the actual artifact, not just synthetic fixtures: loads
+  all 3,008 real chunks in ~40ms, indexes in ~2.7s, and returns sane
+  BM25-ranked hits for both prose and table queries — see the package tests
+  for the synthetic-fixture coverage that runs in CI.
+
+**Not yet decided:** where the loader resolves `chunks.json`'s path from at
+server startup (flag vs. hardcoded relative path) — deferred until
+`cmd/server` exists.
+
+---
+
 ## 2026-09-08 — Stage 1 extraction implemented: chunk schema, `chunks.json` shape, and a handful of corpus-driven calls
 
 **Decision:** `extraction/common.py`, `parse_pdfs.py`, `parse_docx.py`,
