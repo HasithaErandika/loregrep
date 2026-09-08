@@ -7,6 +7,48 @@ after the fact. Newest first.
 
 ---
 
+## 2026-09-08 — `table_lookup(entity, attribute)` tool: subject resolution over codex tables
+
+**Decision:** `src/internal/index/table.go` adds `TableIndex`, indexing
+every table chunk by the entity/subject its rows describe, for the
+`table_lookup` agent tool from `docs/architecture.md`.
+
+- **Subject resolution is a three-step fallback**, discovered by inspecting
+  actual table chunks rather than assumed up front: (1) an explicit `Name`
+  row if the table has one — most character/relic/creature tables do; (2)
+  the chunk's `section` with a `Registry:` prefix stripped — codex
+  biography entries are sectioned `Registry: <name>`; (3) the document
+  title — needed for wiki infobox tables, whose `section` is either `nil`
+  or the **literal string `"Infobox"`**, neither of which names the entity.
+  Missing case (2) initially: the first pass fell back to `doc_title` only
+  when `section == nil`, so every wiki infobox table (`section: "Infobox"`)
+  resolved to the wrong subject — caught by testing against real corpus
+  shapes (`wiki/aldous_wrenfield_the_last_warden.md`,
+  `wiki/ashfall_colossus.md`) before this was ever exercised at runtime,
+  not by a downstream failure.
+- **A useful side effect of the `Registry:`-stripping and `Name`-row rules:**
+  the same entity's codex biography table and wiki infobox table resolve to
+  the identical subject key (both just the person/place's name), so a
+  single `table_lookup` call merges rows from both sources rather than
+  requiring the caller to know which document to ask. Verified against the
+  real corpus: `Lookup("Aldous Wrenfield the Last Warden", "")` returns rows
+  from both `codex/the_annals_of_the_ashen_era.*` and
+  `wiki/aldous_wrenfield_the_last_warden.md`.
+- **Entity and attribute matching are both exact-first, substring-fallback**
+  (only falling back when there's no exact match), so a precise query on a
+  common short name or label isn't diluted by unrelated partial matches —
+  e.g. `Lookup("Aldous Wrenfield", "wields")` still resolves correctly via
+  the fallback even though no table's subject is literally "Aldous
+  Wrenfield".
+- **Duplicate/corroborating rows across chunks are all returned, not
+  deduped** — e.g. `codex_vaeloria_ii...docx` and the `.pdf` re-export of
+  the same document both produce an "Attunement cost" row for the same
+  relic. Deduping is left to the caller (the synthesizer), since two
+  sources agreeing is itself a useful signal the agent may want to
+  preserve, not noise to hide.
+
+---
+
 ## 2026-09-08 — Stage 2 started: corpus loader + full-text index (`keyword_search`)
 
 **Decision:** `src/internal/corpus` loads `data/chunks.json` into typed
